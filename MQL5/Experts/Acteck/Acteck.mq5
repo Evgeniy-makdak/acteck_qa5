@@ -84,10 +84,17 @@ int               g_cnt = 0;
 string UI_PREFIX      = "acteck5_";
 int    UI_X           = 24;
 int    UI_Y           = 98;
-int    UI_ROW_H       = 42;
+int    UI_ROW_H       = 50;
 int    UI_COL_W       = 220;
 int    UI_SYM_W       = 180;
 int    UI_ATR_W       = 90;
+int    UI_TOP_PAD     = 78;
+int    g_ui_panel_top = 0;
+int    g_ui_row_start_y = 0;
+int    g_ui_debug_y = 0;
+int    g_ui_panel_right = 0;
+int    g_last_chart_w = 0;
+int    g_last_chart_h = 0;
 int    g_active_cols[5];
 int    g_active_count = 0;
 int    g_active_visual_row = 0;
@@ -99,6 +106,21 @@ string NormalizeSymbolCode(string s)
    StringReplace(s, " ", "");
    StringReplace(s, "/", "");
    return s;
+}
+
+string FitTextByPixels(const string text, const int width_px, const int char_px = 7)
+{
+   if(width_px <= 0)
+      return "";
+   int max_chars = width_px / MathMax(5, char_px);
+   if(max_chars < 8)
+      max_chars = 8;
+   int len = StringLen(text);
+   if(len <= max_chars)
+      return text;
+   if(max_chars <= 3)
+      return StringSubstr(text, 0, max_chars);
+   return StringSubstr(text, 0, max_chars - 3) + "...";
 }
 
 string ResolveSymbolName(string requested)
@@ -617,9 +639,14 @@ void DrawTrendsAndProbability(const string sy, int pips)
       DrawHorizontal(UI_PREFIX + "price_tp", tp, clrLime, "Target");
       if(ShowDebugDetails)
       {
-         SetLabel(UI_PREFIX + "prob_details", UI_X + 120, UI_Y + 10,
-                  "Pcur=" + IntegerToString(curr_prob) + "%, Dist=" + DoubleToString(dist_pts, 0) +
-                  "pt, N=" + IntegerToString(n) + ", idx=" + IntegerToString(rank),
+         int dbg_x = UI_X + 132;
+         int dbg_w = g_ui_panel_right - dbg_x - 14;
+         if(dbg_w < 120)
+            dbg_w = 120;
+         string dbg_text = "Pcur=" + IntegerToString(curr_prob) + "%, Dist=" + DoubleToString(dist_pts, 0) +
+                           "pt, N=" + IntegerToString(n) + ", idx=" + IntegerToString(rank);
+         SetLabel(UI_PREFIX + "prob_details", dbg_x, g_ui_debug_y,
+                  FitTextByPixels(dbg_text, dbg_w, 7),
                   C'80,80,80');
       }
       else
@@ -663,7 +690,7 @@ void SetLabel(const string name, const int x, const int y, const string text, co
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
-    ObjectSetString(0, name, OBJPROP_FONT, "Arial");
+   ObjectSetString(0, name, OBJPROP_FONT, "Segoe UI");
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
 }
 
@@ -685,17 +712,17 @@ void SetButton(const string name, const int x, const int y, const int w, const i
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
 }
 
-void DrawTablePanel(const int rows)
+void DrawTablePanel(const int rows, const int panel_top, const int panel_h)
 {
    string name = UI_PREFIX + "panel";
    if(ObjectFind(0, name) < 0)
       ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
    int cols = MathMax(1, g_active_count);
    int w = UI_SYM_W + UI_ATR_W + (cols * UI_COL_W) + 44;
-   int h = 220 + rows * UI_ROW_H + 70;
+   int h = panel_h;
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_XDISTANCE, UI_X - 14);
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, UI_Y - 52);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, panel_top);
    ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
    ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, C'245,245,245');
@@ -713,6 +740,7 @@ void BuildUI()
 
    // Keep columns inside chart area to avoid clipping on the right edge.
    long chart_w = 0;
+   long chart_h = 0;
    if(ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0, chart_w))
    {
       int cols = MathMax(1, g_active_count);
@@ -722,23 +750,40 @@ void BuildUI()
       if(dynamic_w > 260) dynamic_w = 260;
       UI_COL_W = dynamic_w;
    }
-   DrawTablePanel(rows);
+   ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0, chart_h);
 
-   int title_y = UI_Y - 72;
-   int hint_active_y = UI_Y - 16;
-   int debug_y = UI_Y + 10;
-   int header_y = UI_Y + 46;
-   int row_start_y = UI_Y + 88;
+   int panel_top = UI_Y - UI_TOP_PAD;
+   if(panel_top < 8)
+      panel_top = 8;
+   int min_panel_h = 290 + rows * UI_ROW_H;
+   if((int)chart_h > 0 && panel_top + min_panel_h > (int)chart_h - 10)
+      panel_top = MathMax(8, (int)chart_h - min_panel_h - 10);
+
+   int title_y = panel_top + 12;
+   int active_y = panel_top + 50;
+   int hint_active_y = panel_top + 82;
+   int debug_y = panel_top + 114;
+   int header_y = panel_top + 154;
+   int row_start_y = panel_top + 204;
    int panel_w = UI_SYM_W + UI_ATR_W + (MathMax(1, g_active_count) * UI_COL_W) + 44;
-   int mode_x = (UI_X - 14) + panel_w - 330 - 16;
-   if(mode_x < UI_X + 380)
-      mode_x = UI_X + 380;
+   int panel_h = (row_start_y + rows * UI_ROW_H + 72) - panel_top;
+   DrawTablePanel(rows, panel_top, panel_h);
+
+   g_ui_panel_top = panel_top;
+   g_ui_row_start_y = row_start_y;
+   g_ui_debug_y = debug_y;
+   g_ui_panel_right = (UI_X - 14) + panel_w;
+
+   int mode_w = 300;
+   int mode_x = g_ui_panel_right - mode_w - 16;
+   if(mode_x < UI_X + 330)
+      mode_x = UI_X + 330;
    SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck QA5 | Author: Evgeniy Acteck", C'0,8,127');
-   SetButton(UI_PREFIX + "mode", mode_x, title_y - 4, 330, 34, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
-   SetLabel(UI_PREFIX + "active", UI_X + 360, title_y, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
-   SetLabel(UI_PREFIX + "active_hint", UI_X + 360, hint_active_y, "Current% справа = только активный фильтр/ТФ", C'90,90,90');
+   SetButton(UI_PREFIX + "mode", mode_x, title_y - 2, mode_w, 36, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
+   SetLabel(UI_PREFIX + "active", UI_X + 10, active_y, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
+   SetLabel(UI_PREFIX + "active_hint", UI_X + 10, hint_active_y, "Current% справа = только активный фильтр/ТФ", C'90,90,90');
    if(ShowDebugDetails)
-      SetLabel(UI_PREFIX + "debug_label", UI_X + 10, debug_y, "Диагностика:", C'100,100,100');
+      SetLabel(UI_PREFIX + "debug_label", UI_X + 10, debug_y, "Диагностика: ", C'100,100,100');
    else
    {
       ObjectDelete(0, UI_PREFIX + "debug_label");
@@ -746,7 +791,7 @@ void BuildUI()
    }
    SetLabel(UI_PREFIX + "h_sym", UI_X + 10, header_y, "Символ", C'0,8,127');
    SetLabel(UI_PREFIX + "h_atr", UI_X + UI_SYM_W + 8, header_y, "ATR", C'0,8,127');
-   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 36, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
+   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 40, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
 
    for(int c = 0; c < g_active_count; c++)
    {
@@ -788,7 +833,7 @@ void BuildUI()
       {
          string btn = UI_PREFIX + "btn_" + IntegerToString(r) + "_" + IntegerToString(c);
          string txt = "...";
-         SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + c * UI_COL_W, y - 8, UI_COL_W - 22, 38, txt, clrWhite, C'0,8,127');
+         SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + c * UI_COL_W, y - 8, UI_COL_W - 22, 42, txt, clrWhite, C'0,8,127');
          idx++;
       }
    }
@@ -806,8 +851,8 @@ void SetCell(const int row, const int col, const string text, const int trend)
          bg = C'220,240,220';
       fg = C'0,90,0';
    }
-   int row_y = UI_Y + 88 + row * UI_ROW_H;
-   SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + col * UI_COL_W, row_y - 8, UI_COL_W - 22, 38, text, bg, fg);
+   int row_y = g_ui_row_start_y + row * UI_ROW_H;
+   SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + col * UI_COL_W, row_y - 8, UI_COL_W - 22, 42, text, bg, fg);
    ObjectSetInteger(0, btn, OBJPROP_BORDER_COLOR, (row == g_active_visual_row && col == g_active_visual_col) ? C'0,150,0' : C'120,120,120');
 }
 
@@ -920,6 +965,11 @@ int OnInit()
    ReportTrends(rep_sym, MinPips, Timeframe, g_prob);
 
    BuildUI();
+   long w = 0, h = 0;
+   if(ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0, w))
+      g_last_chart_w = (int)w;
+   if(ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0, h))
+      g_last_chart_h = (int)h;
    EventSetTimer(MathMax(1, Updater));
    g_next_update = TimeLocal();
    return INIT_SUCCEEDED;
@@ -1011,7 +1061,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    g_current_symbol = g_view_symbols[r];
    g_active_visual_row = r;
    g_active_visual_col = c;
-   SetLabel(UI_PREFIX + "active", UI_X + 360, UI_Y - 72, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
+   SetLabel(UI_PREFIX + "active", UI_X + 10, g_ui_panel_top + 50, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
    ChartSetSymbolPeriod(ChartID(), g_current_symbol, g_current_tf);
 }
 //+------------------------------------------------------------------+
