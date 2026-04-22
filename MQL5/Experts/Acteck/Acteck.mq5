@@ -79,6 +79,7 @@ string            g_last_trend_name = "";
 string            g_last_up_name = "";
 string            g_last_dn_name = "";
 int               g_cnt = 0;
+bool              g_show_debug_details = true;
 
 // UI constants
 string UI_PREFIX      = "acteck5_";
@@ -637,9 +638,9 @@ void DrawTrendsAndProbability(const string sy, int pips)
       int curr_prob = CalcProbabilityDetailed(sy, st_tr, cur_tr, n, dist_pts, rank);
       DrawHorizontal(UI_PREFIX + "price_now", cur_tr, clrLime, "Current " + IntegerToString(curr_prob) + "%");
       DrawHorizontal(UI_PREFIX + "price_tp", tp, clrLime, "Target");
-      if(ShowDebugDetails)
+      if(g_show_debug_details)
       {
-         int dbg_x = UI_X + 132;
+         int dbg_x = UI_X + 160;
          int dbg_w = g_ui_panel_right - dbg_x - 14;
          if(dbg_w < 120)
             dbg_w = 120;
@@ -755,7 +756,7 @@ void BuildUI()
    int panel_top = UI_Y - UI_TOP_PAD;
    if(panel_top < 8)
       panel_top = 8;
-   int min_panel_h = 290 + rows * UI_ROW_H;
+   int min_panel_h = 320 + rows * UI_ROW_H;
    if((int)chart_h > 0 && panel_top + min_panel_h > (int)chart_h - 10)
       panel_top = MathMax(8, (int)chart_h - min_panel_h - 10);
 
@@ -763,10 +764,10 @@ void BuildUI()
    int active_y = panel_top + 50;
    int hint_active_y = panel_top + 82;
    int debug_y = panel_top + 114;
-   int header_y = panel_top + 154;
-   int row_start_y = panel_top + 204;
+   int header_y = panel_top + 148;
+   int row_start_y = panel_top + 198;
    int panel_w = UI_SYM_W + UI_ATR_W + (MathMax(1, g_active_count) * UI_COL_W) + 44;
-   int panel_h = (row_start_y + rows * UI_ROW_H + 72) - panel_top;
+   int panel_h = (row_start_y + rows * UI_ROW_H + 122) - panel_top;
    DrawTablePanel(rows, panel_top, panel_h);
 
    g_ui_panel_top = panel_top;
@@ -778,11 +779,17 @@ void BuildUI()
    int mode_x = g_ui_panel_right - mode_w - 16;
    if(mode_x < UI_X + 330)
       mode_x = UI_X + 330;
+   int dbg_toggle_w = 150;
+   int dbg_toggle_x = g_ui_panel_right - dbg_toggle_w - 16;
+   if(dbg_toggle_x < UI_X + 10)
+      dbg_toggle_x = UI_X + 10;
    SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck QA5 | Author: Evgeniy Acteck", C'0,8,127');
    SetButton(UI_PREFIX + "mode", mode_x, title_y - 2, mode_w, 36, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
    SetLabel(UI_PREFIX + "active", UI_X + 10, active_y, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
-   SetLabel(UI_PREFIX + "active_hint", UI_X + 10, hint_active_y, "Current% справа = только активный фильтр/ТФ", C'90,90,90');
-   if(ShowDebugDetails)
+   ObjectDelete(0, UI_PREFIX + "active_hint");
+   SetButton(UI_PREFIX + "debug_toggle", dbg_toggle_x, debug_y - 3, dbg_toggle_w, 30,
+             (g_show_debug_details ? "[x] Debug" : "[ ] Debug"), C'235,235,235', C'0,8,127');
+   if(g_show_debug_details)
       SetLabel(UI_PREFIX + "debug_label", UI_X + 10, debug_y, "Диагностика: ", C'100,100,100');
    else
    {
@@ -791,7 +798,7 @@ void BuildUI()
    }
    SetLabel(UI_PREFIX + "h_sym", UI_X + 10, header_y, "Символ", C'0,8,127');
    SetLabel(UI_PREFIX + "h_atr", UI_X + UI_SYM_W + 8, header_y, "ATR", C'0,8,127');
-   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 40, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
+   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 44, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
 
    for(int c = 0; c < g_active_count; c++)
    {
@@ -956,6 +963,7 @@ int OnInit()
    g_current_filter = MinPips;
    g_current_tf = PERIOD_CURRENT;
    g_current_symbol = _Symbol;
+   g_show_debug_details = ShowDebugDetails;
 
    if(!LoadSymbolsSet(NameSet, g_symbols))
       return INIT_FAILED;
@@ -1032,6 +1040,13 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 {
    if(id != CHARTEVENT_OBJECT_CLICK)
       return;
+   if(sparam == UI_PREFIX + "debug_toggle")
+   {
+      g_show_debug_details = !g_show_debug_details;
+      CleanupObjects();
+      BuildUI();
+      return;
+   }
    if(sparam == UI_PREFIX + "mode")
    {
       g_view_mode = (g_view_mode == MODE_PROBABILITY ? MODE_DURATION : MODE_PROBABILITY);
