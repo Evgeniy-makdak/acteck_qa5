@@ -48,9 +48,9 @@ input int             Level2       = 1000;                      // Filter column
 input ENUM_TIMEFRAMES Timeframe2   = PERIOD_H4;                 // Timeframe column 2
 input int             Level3       = 1500;                      // Filter column 3
 input ENUM_TIMEFRAMES Timeframe3   = PERIOD_D1;                 // Timeframe column 3
-input int             Level4       = 2000;                      // Filter column 4
+input int             Level4       = 0;                         // Filter column 4 (0 = disabled by default)
 input ENUM_TIMEFRAMES Timeframe4   = PERIOD_W1;                 // Timeframe column 4
-input int             Level5       = 2500;                      // Filter column 5
+input int             Level5       = 0;                         // Filter column 5 (0 = disabled by default)
 input ENUM_TIMEFRAMES Timeframe5   = PERIOD_MN1;                // Timeframe column 5
 input int             Updater      = 1;                         // Update interval (sec)
 input int             ATRPeriod    = 14;                        // ATR period
@@ -81,12 +81,14 @@ int               g_cnt = 0;
 
 // UI constants
 string UI_PREFIX      = "acteck5_";
-int    UI_X           = 15;
-int    UI_Y           = 35;
-int    UI_ROW_H       = 24;
-int    UI_COL_W       = 145;
-int    UI_SYM_W       = 95;
-int    UI_ATR_W       = 55;
+int    UI_X           = 24;
+int    UI_Y           = 98;
+int    UI_ROW_H       = 36;
+int    UI_COL_W       = 270;
+int    UI_SYM_W       = 180;
+int    UI_ATR_W       = 90;
+int    g_active_cols[5];
+int    g_active_count = 0;
 
 string NormalizeSymbolCode(string s)
 {
@@ -148,6 +150,19 @@ void BuildViewSymbols()
    ArrayResize(g_view_symbols, n);
    for(int i = 0; i < n; i++)
       g_view_symbols[i] = g_symbols[i];
+}
+
+void BuildActiveColumns()
+{
+   g_active_count = 0;
+   for(int i = 0; i < 5; i++)
+   {
+      if(g_levels[i] > 0)
+      {
+         g_active_cols[g_active_count] = i;
+         g_active_count++;
+      }
+   }
 }
 
 double PointValue(const string sym)
@@ -496,12 +511,14 @@ int CalcProbability(const string sy, double s, double e)
    ArraySort(prob1);
    ArrayReverse(prob1);
 
-   int direct = (s < e) ? 1 : -1;
    double pt = PointValue(sy);
+   if(pt <= 0.0)
+      return 0;
+   double dist = MathAbs(e - s);
    for(int i = 0; i < l; i++)
    {
-      double new_lvl = (direct > 0) ? (s + prob1[i] * pt) : (s - prob1[i] * pt);
-      if((new_lvl <= e && direct > 0) || (new_lvl >= e && direct < 0))
+      double level_dist = prob1[i] * pt;
+      if(level_dist <= dist)
          return GetChance(l - i, l);
    }
    return 0;
@@ -544,12 +561,13 @@ void DrawTrendsAndProbability(const string sy, int pips)
 
    double st_tr = ObjectGetDouble(0, g_last_trend_name, OBJPROP_PRICE, 0);
    double end_tr = ObjectGetDouble(0, g_last_trend_name, OBJPROP_PRICE, 1);
+   double cur_tr = iClose(sy, g_current_tf, 0);
    double pt = PointValue(sy);
    double tp = (end_tr > st_tr) ? (end_tr - pips * pt) : (end_tr + pips * pt);
 
    if(g_view_mode == MODE_PROBABILITY)
    {
-      DrawHorizontal(UI_PREFIX + "price_now", end_tr, clrLime, "Current");
+      DrawHorizontal(UI_PREFIX + "price_now", cur_tr, clrLime, "Current");
       DrawHorizontal(UI_PREFIX + "price_tp", tp, clrLime, "Target");
    }
    else
@@ -573,6 +591,8 @@ void DrawTrendsAndProbability(const string sy, int pips)
    }
    double max_lvl = (direct > 0) ? (st_tr + g_prob[0] * pt) : (st_tr - g_prob[0] * pt);
    DrawHorizontal(UI_PREFIX + "line_prob_100", max_lvl, clrOlive, "100%");
+   // Remove custom "live probability" label: it was not part of original MT4 logic and caused confusion.
+   ObjectDelete(0, UI_PREFIX + "prob_live");
 }
 
 void SetLabel(const string name, const int x, const int y, const string text, const color clr, const int corner = CORNER_LEFT_UPPER)
@@ -612,11 +632,12 @@ void DrawTablePanel(const int rows)
    string name = UI_PREFIX + "panel";
    if(ObjectFind(0, name) < 0)
       ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
-   int w = UI_SYM_W + UI_ATR_W + (5 * UI_COL_W) + 20;
-   int h = 40 + rows * UI_ROW_H + 20;
+   int cols = MathMax(1, g_active_count);
+   int w = UI_SYM_W + UI_ATR_W + (cols * UI_COL_W) + 44;
+   int h = 110 + rows * UI_ROW_H + 56;
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, UI_X - 8);
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, UI_Y - 28);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, UI_X - 14);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, UI_Y - 52);
    ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
    ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, C'245,245,245');
@@ -629,21 +650,26 @@ void DrawTablePanel(const int rows)
 void BuildUI()
 {
    int rows = ArraySize(g_view_symbols);
+   BuildActiveColumns();
    DrawTablePanel(rows);
 
-   SetLabel(UI_PREFIX + "title", UI_X, UI_Y - 18, "Acteck QA5 | Author: Evgeniy Acteck", C'0,8,127');
-   SetButton(UI_PREFIX + "mode", UI_X + 530, UI_Y - 22, 120, 20, (g_view_mode == MODE_PROBABILITY ? "Вероятность" : "Длительность"), clrForestGreen, clrWhite);
-   SetLabel(UI_PREFIX + "h_sym", UI_X + 10, UI_Y, "Символ", C'0,8,127');
-   SetLabel(UI_PREFIX + "h_atr", UI_X + UI_SYM_W, UI_Y, "ATR", C'0,8,127');
-   SetLabel(UI_PREFIX + "hint", UI_X + 10, UI_Y + rows * UI_ROW_H + 30, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
+   int title_y = UI_Y - 40;
+   int header_y = UI_Y + 6;
+   int row_start_y = UI_Y + 52;
+   SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck QA5 | Author: Evgeniy Acteck", C'0,8,127');
+   SetButton(UI_PREFIX + "mode", UI_X + 760, title_y - 4, 220, 28, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
+   SetLabel(UI_PREFIX + "h_sym", UI_X + 10, header_y, "Символ", C'0,8,127');
+   SetLabel(UI_PREFIX + "h_atr", UI_X + UI_SYM_W + 8, header_y, "ATR", C'0,8,127');
+   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 24, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
 
-   for(int c = 0; c < 5; c++)
+   for(int c = 0; c < g_active_count; c++)
    {
-      string txt = IntegerToString(g_levels[c]) + " - " + TFToString(g_tfs[c]);
-      SetLabel(UI_PREFIX + "h_f_" + IntegerToString(c), UI_X + UI_SYM_W + UI_ATR_W + 10 + c * UI_COL_W, UI_Y, txt, C'0,8,127');
+      int real_col = g_active_cols[c];
+      string txt = IntegerToString(g_levels[real_col]) + " - " + TFToString(g_tfs[real_col]);
+      SetLabel(UI_PREFIX + "h_f_" + IntegerToString(c), UI_X + UI_SYM_W + UI_ATR_W + 26 + c * UI_COL_W, header_y, txt, C'0,8,127');
    }
 
-   int total_signals = rows * 5;
+   int total_signals = rows * MathMax(1, g_active_count);
    if(ArraySize(g_alerts) != total_signals)
    {
       ArrayResize(g_alerts, total_signals);
@@ -653,7 +679,7 @@ void BuildUI()
    int idx = 0;
    for(int r = 0; r < rows; r++)
    {
-      int y = UI_Y + 22 + r * UI_ROW_H;
+      int y = row_start_y + r * UI_ROW_H;
       SetLabel(UI_PREFIX + "sym_" + IntegerToString(r), UI_X + 10, y, g_view_symbols[r], C'0,8,127');
 
       int atr_handle = iATR(g_view_symbols[r], PERIOD_CURRENT, ATRPeriod);
@@ -669,13 +695,13 @@ void BuildUI()
          }
          IndicatorRelease(atr_handle);
       }
-      SetLabel(UI_PREFIX + "atr_" + IntegerToString(r), UI_X + UI_SYM_W, y, atr_text, C'0,8,127');
+      SetLabel(UI_PREFIX + "atr_" + IntegerToString(r), UI_X + UI_SYM_W + 8, y, atr_text, C'0,8,127');
 
-      for(int c = 0; c < 5; c++)
+      for(int c = 0; c < g_active_count; c++)
       {
          string btn = UI_PREFIX + "btn_" + IntegerToString(r) + "_" + IntegerToString(c);
-         string txt = (g_levels[c] == 0 ? "" : "...");
-         SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + c * UI_COL_W, y - 2, UI_COL_W - 6, 20, txt, clrWhite, C'0,8,127');
+         string txt = "...";
+         SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + c * UI_COL_W, y - 4, UI_COL_W - 20, 28, txt, clrWhite, C'0,8,127');
          idx++;
       }
    }
@@ -687,7 +713,8 @@ void SetCell(const int row, const int col, const string text, const int trend)
    color bg = C'250,250,250', fg = C'0,8,127';
    if(trend > 0) { bg = C'61,122,224'; fg = clrWhite; }
    if(trend < 0) { bg = C'220,80,80';  fg = clrWhite; }
-   SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + col * UI_COL_W, UI_Y + 22 + row * UI_ROW_H - 2, UI_COL_W - 6, 20, text, bg, fg);
+   int row_y = UI_Y + 52 + row * UI_ROW_H;
+   SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + col * UI_COL_W, row_y - 4, UI_COL_W - 20, 28, text, bg, fg);
 }
 
 void CallAlert(const int lvl, const int index)
@@ -705,14 +732,17 @@ void CallAlert(const int lvl, const int index)
 void UpdateTable()
 {
    int rows = ArraySize(g_view_symbols);
+   if(g_active_count <= 0)
+      return;
    int idx = 0;
    for(int r = 0; r < rows; r++)
    {
       string sy = g_view_symbols[r];
-      for(int c = 0; c < 5; c++)
+      for(int c = 0; c < g_active_count; c++)
       {
-         int filter = g_levels[c];
-         ENUM_TIMEFRAMES tf = g_tfs[c];
+         int real_col = g_active_cols[c];
+         int filter = g_levels[real_col];
+         ENUM_TIMEFRAMES tf = g_tfs[real_col];
          if(filter == 0)
          {
             SetCell(r, c, "", 0);
@@ -730,7 +760,7 @@ void UpdateTable()
             continue;
          }
          double st_pr = StringToDouble(report[g_cnt - 1].start_tr_pr);
-         double en_pr = StringToDouble(report[g_cnt - 1].end_tr_pr);
+         double en_pr = iClose(sy, tf, 0);
          SearchTrends(sy, tf, EffectiveEndDate(), filter, false);
          int perc = CalcProbability(sy, st_pr, en_pr);
          CallAlert(perc, idx);
@@ -810,6 +840,7 @@ void DoPeriodicUpdate()
       if(ArraySize(g_view_symbols) != 1 || g_view_symbols[0] != cur)
       {
          BuildViewSymbols();
+         BuildActiveColumns();
          CleanupObjects();
          BuildUI();
       }
@@ -852,7 +883,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    if(sparam == UI_PREFIX + "mode")
    {
       g_view_mode = (g_view_mode == MODE_PROBABILITY ? MODE_DURATION : MODE_PROBABILITY);
-      SetButton(UI_PREFIX + "mode", UI_X + 530, UI_Y - 22, 120, 20, (g_view_mode == MODE_PROBABILITY ? "Вероятность" : "Длительность"), clrForestGreen, clrWhite);
+      SetButton(UI_PREFIX + "mode", UI_X + 860, UI_Y - 44, 180, 28, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
       ObjectsDeleteAll(0, UI_PREFIX + "line_prob_");
       ObjectsDeleteAll(0, UI_PREFIX + "price_");
       return;
@@ -868,13 +899,12 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       return;
    int r = (int)StringToInteger(parts[0]);
    int c = (int)StringToInteger(parts[1]);
-   if(r < 0 || r >= ArraySize(g_view_symbols) || c < 0 || c >= 5)
+   if(r < 0 || r >= ArraySize(g_view_symbols) || c < 0 || c >= g_active_count)
       return;
-   if(g_levels[c] == 0)
-      return;
+   int real_col = g_active_cols[c];
 
-   g_current_filter = g_levels[c];
-   g_current_tf = g_tfs[c];
+   g_current_filter = g_levels[real_col];
+   g_current_tf = g_tfs[real_col];
    g_current_symbol = g_view_symbols[r];
    ChartSetSymbolPeriod(ChartID(), g_current_symbol, g_current_tf);
 }
