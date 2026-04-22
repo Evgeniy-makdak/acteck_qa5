@@ -56,9 +56,11 @@ input int             Updater      = 1;                         // Update interv
 input int             ATRPeriod    = 14;                        // ATR period
 input int             Indent       = 100;                       // Chart labels indent
 input bool            EnableAlerts = true;                      // Alert on probability >= 60
+input bool            ShowOnlyCurrentSymbol = true;             // Render table for current chart symbol only
 
 REPORT report[];
 string g_symbols[];
+string g_view_symbols[];
 bool   g_alerts[];
 int    g_prob[];
 
@@ -127,6 +129,25 @@ string ResolveSymbolName(string requested)
       }
    }
    return best;
+}
+
+void BuildViewSymbols()
+{
+   ArrayResize(g_view_symbols, 0);
+   if(ShowOnlyCurrentSymbol)
+   {
+      string cur = ResolveSymbolName(_Symbol);
+      if(cur == "")
+         cur = _Symbol;
+      ArrayResize(g_view_symbols, 1);
+      g_view_symbols[0] = cur;
+      return;
+   }
+
+   int n = ArraySize(g_symbols);
+   ArrayResize(g_view_symbols, n);
+   for(int i = 0; i < n; i++)
+      g_view_symbols[i] = g_symbols[i];
 }
 
 double PointValue(const string sym)
@@ -607,13 +628,14 @@ void DrawTablePanel(const int rows)
 
 void BuildUI()
 {
-   int rows = ArraySize(g_symbols);
+   int rows = ArraySize(g_view_symbols);
    DrawTablePanel(rows);
 
    SetLabel(UI_PREFIX + "title", UI_X, UI_Y - 18, "Acteck QA5 | Author: Evgeniy Acteck", C'0,8,127');
    SetButton(UI_PREFIX + "mode", UI_X + 530, UI_Y - 22, 120, 20, (g_view_mode == MODE_PROBABILITY ? "Вероятность" : "Длительность"), clrForestGreen, clrWhite);
    SetLabel(UI_PREFIX + "h_sym", UI_X + 10, UI_Y, "Символ", C'0,8,127');
    SetLabel(UI_PREFIX + "h_atr", UI_X + UI_SYM_W, UI_Y, "ATR", C'0,8,127');
+   SetLabel(UI_PREFIX + "hint", UI_X + 10, UI_Y + rows * UI_ROW_H + 30, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
 
    for(int c = 0; c < 5; c++)
    {
@@ -632,16 +654,16 @@ void BuildUI()
    for(int r = 0; r < rows; r++)
    {
       int y = UI_Y + 22 + r * UI_ROW_H;
-      SetLabel(UI_PREFIX + "sym_" + IntegerToString(r), UI_X + 10, y, g_symbols[r], C'0,8,127');
+      SetLabel(UI_PREFIX + "sym_" + IntegerToString(r), UI_X + 10, y, g_view_symbols[r], C'0,8,127');
 
-      int atr_handle = iATR(g_symbols[r], PERIOD_CURRENT, ATRPeriod);
+      int atr_handle = iATR(g_view_symbols[r], PERIOD_CURRENT, ATRPeriod);
       string atr_text = "-";
       if(atr_handle != INVALID_HANDLE)
       {
          double buf[];
          if(CopyBuffer(atr_handle, 0, 0, 1, buf) > 0)
          {
-            double pt = PointValue(g_symbols[r]);
+            double pt = PointValue(g_view_symbols[r]);
             if(pt > 0.0)
                atr_text = DoubleToString(buf[0] / pt / 10.0, 0);
          }
@@ -652,7 +674,7 @@ void BuildUI()
       for(int c = 0; c < 5; c++)
       {
          string btn = UI_PREFIX + "btn_" + IntegerToString(r) + "_" + IntegerToString(c);
-         string txt = (g_levels[c] == 0 ? "" : "Loading...");
+         string txt = (g_levels[c] == 0 ? "" : "...");
          SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + c * UI_COL_W, y - 2, UI_COL_W - 6, 20, txt, clrWhite, C'0,8,127');
          idx++;
       }
@@ -662,9 +684,9 @@ void BuildUI()
 void SetCell(const int row, const int col, const string text, const int trend)
 {
    string btn = UI_PREFIX + "btn_" + IntegerToString(row) + "_" + IntegerToString(col);
-   color bg = clrWhite, fg = C'0,8,127';
-   if(trend > 0) { bg = clrBlue; fg = clrWhite; }
-   if(trend < 0) { bg = clrRed;  fg = clrWhite; }
+   color bg = C'250,250,250', fg = C'0,8,127';
+   if(trend > 0) { bg = C'61,122,224'; fg = clrWhite; }
+   if(trend < 0) { bg = C'220,80,80';  fg = clrWhite; }
    SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + col * UI_COL_W, UI_Y + 22 + row * UI_ROW_H - 2, UI_COL_W - 6, 20, text, bg, fg);
 }
 
@@ -682,11 +704,11 @@ void CallAlert(const int lvl, const int index)
 
 void UpdateTable()
 {
-   int rows = ArraySize(g_symbols);
+   int rows = ArraySize(g_view_symbols);
    int idx = 0;
    for(int r = 0; r < rows; r++)
    {
-      string sy = g_symbols[r];
+      string sy = g_view_symbols[r];
       for(int c = 0; c < 5; c++)
       {
          int filter = g_levels[c];
@@ -739,7 +761,7 @@ void UpdateTable()
          int clr = 0;
          if(perc >= 60)
             clr = (report[g_cnt - 1].trend == "buy" ? 1 : -1);
-         SetCell(r, c, IntegerToString(perc) + "%  " + IntegerToString(max_corr) + "  " + curr_dev, clr);
+         SetCell(r, c, IntegerToString(perc) + "% | " + IntegerToString(max_corr) + " | " + curr_dev, clr);
          idx++;
       }
    }
@@ -761,6 +783,7 @@ int OnInit()
 
    if(!LoadSymbolsSet(NameSet, g_symbols))
       return INIT_FAILED;
+   BuildViewSymbols();
 
    string rep_sym = (RepType == AUTO ? _Symbol : Symb);
    ReportTrends(rep_sym, MinPips, Timeframe, g_prob);
@@ -779,6 +802,20 @@ void OnDeinit(const int reason)
 
 void DoPeriodicUpdate()
 {
+   if(ShowOnlyCurrentSymbol)
+   {
+      string cur = ResolveSymbolName(_Symbol);
+      if(cur == "")
+         cur = _Symbol;
+      if(ArraySize(g_view_symbols) != 1 || g_view_symbols[0] != cur)
+      {
+         BuildViewSymbols();
+         CleanupObjects();
+         BuildUI();
+      }
+      g_current_symbol = cur;
+   }
+
    if(TimeLocal() < g_next_update)
       return;
    g_next_update = TimeLocal() + MathMax(1, Updater);
@@ -831,14 +868,14 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       return;
    int r = (int)StringToInteger(parts[0]);
    int c = (int)StringToInteger(parts[1]);
-   if(r < 0 || r >= ArraySize(g_symbols) || c < 0 || c >= 5)
+   if(r < 0 || r >= ArraySize(g_view_symbols) || c < 0 || c >= 5)
       return;
    if(g_levels[c] == 0)
       return;
 
    g_current_filter = g_levels[c];
    g_current_tf = g_tfs[c];
-   g_current_symbol = g_symbols[r];
+   g_current_symbol = g_view_symbols[r];
    ChartSetSymbolPeriod(ChartID(), g_current_symbol, g_current_tf);
 }
 //+------------------------------------------------------------------+
