@@ -57,6 +57,7 @@ input int             ATRPeriod    = 14;                        // ATR period
 input int             Indent       = 100;                       // Chart labels indent
 input bool            EnableAlerts = true;                      // Alert on probability >= 60
 input bool            ShowOnlyCurrentSymbol = true;             // Render table for current chart symbol only
+input bool            ShowDebugDetails = true;                  // Show debug probability details line
 
 REPORT report[];
 string g_symbols[];
@@ -83,8 +84,8 @@ int               g_cnt = 0;
 string UI_PREFIX      = "acteck5_";
 int    UI_X           = 24;
 int    UI_Y           = 98;
-int    UI_ROW_H       = 44;
-int    UI_COL_W       = 270;
+int    UI_ROW_H       = 42;
+int    UI_COL_W       = 220;
 int    UI_SYM_W       = 180;
 int    UI_ATR_W       = 90;
 int    g_active_cols[5];
@@ -614,10 +615,17 @@ void DrawTrendsAndProbability(const string sy, int pips)
       int curr_prob = CalcProbabilityDetailed(sy, st_tr, cur_tr, n, dist_pts, rank);
       DrawHorizontal(UI_PREFIX + "price_now", cur_tr, clrLime, "Current " + IntegerToString(curr_prob) + "%");
       DrawHorizontal(UI_PREFIX + "price_tp", tp, clrLime, "Target");
-      SetLabel(UI_PREFIX + "prob_details", UI_X + 360, UI_Y - 10,
-               "Pcur=" + IntegerToString(curr_prob) + "%, Dist=" + DoubleToString(dist_pts, 0) +
-               "pt, N=" + IntegerToString(n) + ", idx=" + IntegerToString(rank),
-               C'80,80,80');
+      if(ShowDebugDetails)
+      {
+         SetLabel(UI_PREFIX + "prob_details", UI_X + 120, UI_Y + 10,
+                  "Pcur=" + IntegerToString(curr_prob) + "%, Dist=" + DoubleToString(dist_pts, 0) +
+                  "pt, N=" + IntegerToString(n) + ", idx=" + IntegerToString(rank),
+                  C'80,80,80');
+      }
+      else
+      {
+         ObjectDelete(0, UI_PREFIX + "prob_details");
+      }
    }
    else
    {
@@ -670,10 +678,10 @@ void SetButton(const string name, const int x, const int y, const int w, const i
    ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bg);
    ObjectSetInteger(0, name, OBJPROP_COLOR, fg);
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize - 1);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
-   ObjectSetString(0, name, OBJPROP_FONT, "Arial");
-   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, C'120,120,120');
+   ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, C'70,70,70');
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
 }
 
@@ -684,7 +692,7 @@ void DrawTablePanel(const int rows)
       ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
    int cols = MathMax(1, g_active_count);
    int w = UI_SYM_W + UI_ATR_W + (cols * UI_COL_W) + 44;
-   int h = 150 + rows * UI_ROW_H + 64;
+   int h = 220 + rows * UI_ROW_H + 70;
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_XDISTANCE, UI_X - 14);
    ObjectSetInteger(0, name, OBJPROP_YDISTANCE, UI_Y - 52);
@@ -702,19 +710,43 @@ void BuildUI()
    int rows = ArraySize(g_view_symbols);
    BuildActiveColumns();
    SyncActiveVisualSelection();
+
+   // Keep columns inside chart area to avoid clipping on the right edge.
+   long chart_w = 0;
+   if(ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0, chart_w))
+   {
+      int cols = MathMax(1, g_active_count);
+      int available = (int)chart_w - UI_X - 24 - UI_SYM_W - UI_ATR_W - 40;
+      int dynamic_w = (cols > 0 ? available / cols : 220);
+      if(dynamic_w < 170) dynamic_w = 170;
+      if(dynamic_w > 260) dynamic_w = 260;
+      UI_COL_W = dynamic_w;
+   }
    DrawTablePanel(rows);
 
-   int title_y = UI_Y - 50;
-   int details_y = UI_Y - 28;
-   int header_y = UI_Y + 14;
-   int row_start_y = UI_Y + 68;
+   int title_y = UI_Y - 72;
+   int hint_active_y = UI_Y - 16;
+   int debug_y = UI_Y + 10;
+   int header_y = UI_Y + 46;
+   int row_start_y = UI_Y + 88;
+   int panel_w = UI_SYM_W + UI_ATR_W + (MathMax(1, g_active_count) * UI_COL_W) + 44;
+   int mode_x = (UI_X - 14) + panel_w - 330 - 16;
+   if(mode_x < UI_X + 380)
+      mode_x = UI_X + 380;
    SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck QA5 | Author: Evgeniy Acteck", C'0,8,127');
-   SetButton(UI_PREFIX + "mode", UI_X + 720, title_y - 4, 280, 30, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
+   SetButton(UI_PREFIX + "mode", mode_x, title_y - 4, 330, 34, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
    SetLabel(UI_PREFIX + "active", UI_X + 360, title_y, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
-   SetLabel(UI_PREFIX + "active_hint", UI_X + 360, details_y, "Current% справа относится только к активному графику", C'90,90,90');
+   SetLabel(UI_PREFIX + "active_hint", UI_X + 360, hint_active_y, "Current% справа = только активный фильтр/ТФ", C'90,90,90');
+   if(ShowDebugDetails)
+      SetLabel(UI_PREFIX + "debug_label", UI_X + 10, debug_y, "Диагностика:", C'100,100,100');
+   else
+   {
+      ObjectDelete(0, UI_PREFIX + "debug_label");
+      ObjectDelete(0, UI_PREFIX + "prob_details");
+   }
    SetLabel(UI_PREFIX + "h_sym", UI_X + 10, header_y, "Символ", C'0,8,127');
    SetLabel(UI_PREFIX + "h_atr", UI_X + UI_SYM_W + 8, header_y, "ATR", C'0,8,127');
-   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 28, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
+   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 36, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
 
    for(int c = 0; c < g_active_count; c++)
    {
@@ -756,7 +788,7 @@ void BuildUI()
       {
          string btn = UI_PREFIX + "btn_" + IntegerToString(r) + "_" + IntegerToString(c);
          string txt = "...";
-         SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + c * UI_COL_W, y - 6, UI_COL_W - 20, 34, txt, clrWhite, C'0,8,127');
+         SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + c * UI_COL_W, y - 8, UI_COL_W - 22, 38, txt, clrWhite, C'0,8,127');
          idx++;
       }
    }
@@ -774,9 +806,14 @@ void SetCell(const int row, const int col, const string text, const int trend)
          bg = C'220,240,220';
       fg = C'0,90,0';
    }
-   int row_y = UI_Y + 68 + row * UI_ROW_H;
-   SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + col * UI_COL_W, row_y - 6, UI_COL_W - 20, 34, text, bg, fg);
+   int row_y = UI_Y + 88 + row * UI_ROW_H;
+   SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + col * UI_COL_W, row_y - 8, UI_COL_W - 22, 38, text, bg, fg);
    ObjectSetInteger(0, btn, OBJPROP_BORDER_COLOR, (row == g_active_visual_row && col == g_active_visual_col) ? C'0,150,0' : C'120,120,120');
+}
+
+string FormatCellValue(const int p, const int mx, const string dev)
+{
+   return StringFormat("%d%% | %d | %s", p, mx, dev);
 }
 
 void CallAlert(const int lvl, const int index)
@@ -855,7 +892,7 @@ void UpdateTable()
          int clr = 0;
          if(perc >= 60)
             clr = (report[g_cnt - 1].trend == "buy" ? 1 : -1);
-         SetCell(r, c, IntegerToString(perc) + "% | " + IntegerToString(max_corr) + " | " + curr_dev, clr);
+         SetCell(r, c, FormatCellValue(perc, max_corr, curr_dev), clr);
          idx++;
       }
    }
@@ -948,9 +985,10 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    if(sparam == UI_PREFIX + "mode")
    {
       g_view_mode = (g_view_mode == MODE_PROBABILITY ? MODE_DURATION : MODE_PROBABILITY);
-      SetButton(UI_PREFIX + "mode", UI_X + 720, UI_Y - 54, 280, 30, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
       ObjectsDeleteAll(0, UI_PREFIX + "line_prob_");
       ObjectsDeleteAll(0, UI_PREFIX + "price_");
+      CleanupObjects();
+      BuildUI();
       return;
    }
 
@@ -973,7 +1011,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    g_current_symbol = g_view_symbols[r];
    g_active_visual_row = r;
    g_active_visual_col = c;
-   SetLabel(UI_PREFIX + "active", UI_X + 360, UI_Y - 50, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
+   SetLabel(UI_PREFIX + "active", UI_X + 360, UI_Y - 72, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
    ChartSetSymbolPeriod(ChartID(), g_current_symbol, g_current_tf);
 }
 //+------------------------------------------------------------------+
