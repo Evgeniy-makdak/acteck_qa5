@@ -37,7 +37,8 @@ input REPORT_TYPE     RepType      = AUTO;                      // Report symbol
 input string          Symb         = "EURUSD";                  // Manual report symbol
 input ENUM_TIMEFRAMES Timeframe    = PERIOD_H1;                 // Report timeframe
 input datetime        StartDate    = D'2020.10.01 00:00';       // Report start datetime
-input datetime        EndDate      = D'2020.12.01 00:00';       // Report end datetime
+input bool            UseCurrentEndDate = true;                 // Use current date as report end
+input datetime        EndDate      = D'2020.12.01 00:00';       // Manual report end datetime
 input int             MinPips      = 1000;                      // Volatility filter (points in old MT4 logic)
 input string          NameSet      = "forex";                   // Symbol set filename (without .set)
 input int             FontSize     = 11;                        // UI font size
@@ -144,6 +145,13 @@ int GetChance(const int level, const int all)
    if(chance < 0) chance = 0;
    if(chance > 100) chance = 100;
    return chance;
+}
+
+datetime EffectiveEndDate()
+{
+   if(UseCurrentEndDate)
+      return TimeCurrent();
+   return EndDate;
 }
 
 void EnsureDrawPath()
@@ -399,7 +407,7 @@ void SearchTrends(const string sy, ENUM_TIMEFRAMES tf, datetime end_time, int pi
 
 void ReportTrends(const string sy, int pips, ENUM_TIMEFRAMES tf, int &arr[])
 {
-   SearchTrends(sy, tf, EndDate, pips, false);
+   SearchTrends(sy, tf, EffectiveEndDate(), pips, false);
    WriteReport1(sy, report);
    WriteReport2(sy, report, arr);
 }
@@ -610,7 +618,7 @@ void UpdateTable()
          }
          double st_pr = StringToDouble(report[g_cnt - 1].start_tr_pr);
          double en_pr = StringToDouble(report[g_cnt - 1].end_tr_pr);
-         SearchTrends(sy, tf, EndDate, filter, false);
+         SearchTrends(sy, tf, EffectiveEndDate(), filter, false);
          int perc = CalcProbability(sy, st_pr, en_pr);
          CallAlert(perc, idx);
 
