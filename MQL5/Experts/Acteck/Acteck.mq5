@@ -633,6 +633,8 @@ void DrawTrendsAndProbability(const string sy, int pips)
 
    if(g_view_mode == MODE_PROBABILITY)
    {
+      ObjectDelete(0, UI_PREFIX + "dur_tmax");
+      ObjectDelete(0, UI_PREFIX + "dur_lmax");
       int n = 0, rank = -1;
       double dist_pts = 0.0;
       int curr_prob = CalcProbabilityDetailed(sy, st_tr, cur_tr, n, dist_pts, rank);
@@ -640,7 +642,7 @@ void DrawTrendsAndProbability(const string sy, int pips)
       DrawHorizontal(UI_PREFIX + "price_tp", tp, clrLime, "Target");
       if(g_show_debug_details)
       {
-         int dbg_x = UI_X + 160;
+         int dbg_x = UI_X + 188;
          int dbg_w = g_ui_panel_right - dbg_x - 14;
          if(dbg_w < 120)
             dbg_w = 120;
@@ -660,6 +662,18 @@ void DrawTrendsAndProbability(const string sy, int pips)
       ObjectDelete(0, UI_PREFIX + "price_now");
       ObjectDelete(0, UI_PREFIX + "price_tp");
       ObjectDelete(0, UI_PREFIX + "prob_details");
+      ObjectsDeleteAll(0, UI_PREFIX + "line_prob_");
+
+      SearchTrends(sy, g_current_tf, EffectiveEndDate(), pips, false);
+      int tmax = 0, lmax = 0;
+      for(int i = 0; i < g_cnt; i++)
+      {
+         int mins_i = (int)StringToInteger(report[i].mins);
+         if(mins_i > tmax) tmax = mins_i;
+         if(report[i].pips > lmax) lmax = report[i].pips;
+      }
+      SetLabel(UI_PREFIX + "dur_tmax", UI_X + 188, g_ui_debug_y, "Tmax=" + IntegerToString(tmax) + "m", clrLime);
+      SetLabel(UI_PREFIX + "dur_lmax", UI_X + 320, g_ui_debug_y, "Lmax=" + IntegerToString(lmax / 10) + "p", clrLime);
    }
 
    int all = ArraySize(g_prob);
@@ -798,7 +812,10 @@ void BuildUI()
    }
    SetLabel(UI_PREFIX + "h_sym", UI_X + 10, header_y, "Символ", C'0,8,127');
    SetLabel(UI_PREFIX + "h_atr", UI_X + UI_SYM_W + 8, header_y, "ATR", C'0,8,127');
-   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 44, "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение", C'80,80,80');
+   string hint_text = "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение";
+   if(g_view_mode == MODE_DURATION)
+      hint_text = "Формат ячейки: Длительность % от средней | Макс коррекция | Тек. отклонение";
+   SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 44, hint_text, C'80,80,80');
 
    for(int c = 0; c < g_active_count; c++)
    {
@@ -910,13 +927,28 @@ void UpdateTable()
             idx++;
             continue;
          }
-         // Cell probability must represent the probability of the reached (max) point
-         // on the current trend segment, not the temporary live rollback value.
-         double st_pr = StringToDouble(report[g_cnt - 1].start_tr_pr);
-         double en_pr = StringToDouble(report[g_cnt - 1].end_tr_pr);
-         SearchTrends(sy, tf, EffectiveEndDate(), filter, false);
-         int perc = CalcProbability(sy, st_pr, en_pr);
-         CallAlert(perc, idx);
+         int perc = 0;
+         if(g_view_mode == MODE_PROBABILITY)
+         {
+            // Cell probability must represent the probability of the reached (max) point
+            // on the current trend segment, not the temporary live rollback value.
+            double st_pr = StringToDouble(report[g_cnt - 1].start_tr_pr);
+            double en_pr = StringToDouble(report[g_cnt - 1].end_tr_pr);
+            SearchTrends(sy, tf, EffectiveEndDate(), filter, false);
+            perc = CalcProbability(sy, st_pr, en_pr);
+            CallAlert(perc, idx);
+         }
+         else
+         {
+            SearchTrends(sy, tf, EffectiveEndDate(), filter, false);
+            int average = 0;
+            for(int m = 0; m < g_cnt; m++)
+               average += (int)StringToInteger(report[m].mins);
+            average = (g_cnt > 0 ? (int)(average / (double)g_cnt) : 0);
+            SearchTrends(sy, tf, iTime(sy, tf, 0), filter, false);
+            int cur_mins = (g_cnt > 0 ? (int)StringToInteger(report[g_cnt - 1].mins) : 0);
+            perc = (average > 0 ? (int)MathAbs(cur_mins / (double)average * 100.0) : 0);
+         }
 
          SearchTrends(sy, tf, iTime(sy, tf, 0), filter, false);
          if(g_cnt <= 0)
