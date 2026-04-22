@@ -30,7 +30,8 @@ enum REPORT_TYPE
 enum VIEW_MODE
 {
    MODE_PROBABILITY = 0,
-   MODE_DURATION    = 1
+   MODE_DURATION    = 1,
+   MODE_SPEED       = 2
 };
 
 input REPORT_TYPE     RepType      = AUTO;                      // Report symbol source
@@ -633,6 +634,8 @@ void DrawTrendsAndProbability(const string sy, int pips)
 
    if(g_view_mode == MODE_PROBABILITY)
    {
+      ObjectDelete(0, UI_PREFIX + "mode_stat_1");
+      ObjectDelete(0, UI_PREFIX + "mode_stat_2");
       ObjectDelete(0, UI_PREFIX + "dur_tmax");
       ObjectDelete(0, UI_PREFIX + "dur_lmax");
       int n = 0, rank = -1;
@@ -665,15 +668,35 @@ void DrawTrendsAndProbability(const string sy, int pips)
       ObjectsDeleteAll(0, UI_PREFIX + "line_prob_");
 
       SearchTrends(sy, g_current_tf, EffectiveEndDate(), pips, false);
-      int tmax = 0, lmax = 0;
-      for(int i = 0; i < g_cnt; i++)
+      if(g_view_mode == MODE_DURATION)
       {
-         int mins_i = (int)StringToInteger(report[i].mins);
-         if(mins_i > tmax) tmax = mins_i;
-         if(report[i].pips > lmax) lmax = report[i].pips;
+         int tmax = 0, lmax = 0;
+         for(int i = 0; i < g_cnt; i++)
+         {
+            int mins_i = (int)StringToInteger(report[i].mins);
+            if(mins_i > tmax) tmax = mins_i;
+            if(report[i].pips > lmax) lmax = report[i].pips;
+         }
+         SetLabel(UI_PREFIX + "mode_stat_1", UI_X + 188, g_ui_debug_y, "Tmax=" + IntegerToString(tmax) + "m", clrLime);
+         SetLabel(UI_PREFIX + "mode_stat_2", UI_X + 380, g_ui_debug_y, "Lmax=" + IntegerToString(lmax / 10) + "p", clrLime);
       }
-      SetLabel(UI_PREFIX + "dur_tmax", UI_X + 188, g_ui_debug_y, "Tmax=" + IntegerToString(tmax) + "m", clrLime);
-      SetLabel(UI_PREFIX + "dur_lmax", UI_X + 320, g_ui_debug_y, "Lmax=" + IntegerToString(lmax / 10) + "p", clrLime);
+      else if(g_view_mode == MODE_SPEED)
+      {
+         double sum_speed = 0.0;
+         int n_speed = 0;
+         for(int i = 0; i < g_cnt; i++)
+         {
+            int mins_i = (int)StringToInteger(report[i].mins);
+            if(mins_i <= 0) continue;
+            sum_speed += (report[i].pips / 10.0) / (double)mins_i;
+            n_speed++;
+         }
+         double avg_speed = (n_speed > 0 ? sum_speed / n_speed : 0.0);
+         int cur_mins = (g_cnt > 0 ? (int)StringToInteger(report[g_cnt - 1].mins) : 0);
+         double cur_speed = (cur_mins > 0 ? (report[g_cnt - 1].pips / 10.0) / (double)cur_mins : 0.0);
+         SetLabel(UI_PREFIX + "mode_stat_1", UI_X + 188, g_ui_debug_y, "Vcur=" + DoubleToString(cur_speed, 3), clrLime);
+         SetLabel(UI_PREFIX + "mode_stat_2", UI_X + 380, g_ui_debug_y, "Vavg=" + DoubleToString(avg_speed, 3), clrLime);
+      }
    }
 
    int all = ArraySize(g_prob);
@@ -797,8 +820,20 @@ void BuildUI()
    int dbg_toggle_x = g_ui_panel_right - dbg_toggle_w - 16;
    if(dbg_toggle_x < UI_X + 10)
       dbg_toggle_x = UI_X + 10;
+   string mode_text = "Режим: Вероятность";
+   color mode_bg = clrForestGreen;
+   if(g_view_mode == MODE_DURATION)
+   {
+      mode_text = "Режим: Длительность";
+      mode_bg = clrDeepSkyBlue;
+   }
+   else if(g_view_mode == MODE_SPEED)
+   {
+      mode_text = "Режим: Скорость";
+      mode_bg = clrTomato;
+   }
    SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck QA5 | Author: Evgeniy Acteck", C'0,8,127');
-   SetButton(UI_PREFIX + "mode", mode_x, title_y - 2, mode_w, 36, (g_view_mode == MODE_PROBABILITY ? "Режим: Вероятность" : "Режим: Длительность"), clrForestGreen, clrWhite);
+   SetButton(UI_PREFIX + "mode", mode_x, title_y - 2, mode_w, 36, mode_text, mode_bg, clrWhite);
    SetLabel(UI_PREFIX + "active", UI_X + 10, active_y, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
    ObjectDelete(0, UI_PREFIX + "active_hint");
    SetButton(UI_PREFIX + "debug_toggle", dbg_toggle_x, debug_y - 3, dbg_toggle_w, 30,
@@ -815,6 +850,8 @@ void BuildUI()
    string hint_text = "Формат ячейки: Вероятность % | Макс коррекция | Тек. отклонение";
    if(g_view_mode == MODE_DURATION)
       hint_text = "Формат ячейки: Длительность % от средней | Макс коррекция | Тек. отклонение";
+   else if(g_view_mode == MODE_SPEED)
+      hint_text = "Формат ячейки: Скорость % от средней | Макс коррекция | Тек. отклонение";
    SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 44, hint_text, C'80,80,80');
 
    for(int c = 0; c < g_active_count; c++)
@@ -941,13 +978,33 @@ void UpdateTable()
          else
          {
             SearchTrends(sy, tf, EffectiveEndDate(), filter, false);
-            int average = 0;
-            for(int m = 0; m < g_cnt; m++)
-               average += (int)StringToInteger(report[m].mins);
-            average = (g_cnt > 0 ? (int)(average / (double)g_cnt) : 0);
-            SearchTrends(sy, tf, iTime(sy, tf, 0), filter, false);
-            int cur_mins = (g_cnt > 0 ? (int)StringToInteger(report[g_cnt - 1].mins) : 0);
-            perc = (average > 0 ? (int)MathAbs(cur_mins / (double)average * 100.0) : 0);
+            if(g_view_mode == MODE_DURATION)
+            {
+               int average = 0;
+               for(int m = 0; m < g_cnt; m++)
+                  average += (int)StringToInteger(report[m].mins);
+               average = (g_cnt > 0 ? (int)(average / (double)g_cnt) : 0);
+               SearchTrends(sy, tf, iTime(sy, tf, 0), filter, false);
+               int cur_mins = (g_cnt > 0 ? (int)StringToInteger(report[g_cnt - 1].mins) : 0);
+               perc = (average > 0 ? (int)MathAbs(cur_mins / (double)average * 100.0) : 0);
+            }
+            else // MODE_SPEED
+            {
+               double avg_speed = 0.0;
+               int n_speed = 0;
+               for(int m = 0; m < g_cnt; m++)
+               {
+                  int mins_m = (int)StringToInteger(report[m].mins);
+                  if(mins_m <= 0) continue;
+                  avg_speed += (report[m].pips / 10.0) / (double)mins_m;
+                  n_speed++;
+               }
+               avg_speed = (n_speed > 0 ? avg_speed / n_speed : 0.0);
+               SearchTrends(sy, tf, iTime(sy, tf, 0), filter, false);
+               int cur_mins = (g_cnt > 0 ? (int)StringToInteger(report[g_cnt - 1].mins) : 0);
+               double cur_speed = (cur_mins > 0 ? (report[g_cnt - 1].pips / 10.0) / (double)cur_mins : 0.0);
+               perc = (avg_speed > 0.0 ? (int)MathAbs(cur_speed / avg_speed * 100.0) : 0);
+            }
          }
 
          SearchTrends(sy, tf, iTime(sy, tf, 0), filter, false);
@@ -1081,9 +1138,13 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    }
    if(sparam == UI_PREFIX + "mode")
    {
-      g_view_mode = (g_view_mode == MODE_PROBABILITY ? MODE_DURATION : MODE_PROBABILITY);
+      if(g_view_mode == MODE_PROBABILITY) g_view_mode = MODE_DURATION;
+      else if(g_view_mode == MODE_DURATION) g_view_mode = MODE_SPEED;
+      else g_view_mode = MODE_PROBABILITY;
       ObjectsDeleteAll(0, UI_PREFIX + "line_prob_");
       ObjectsDeleteAll(0, UI_PREFIX + "price_");
+      ObjectDelete(0, UI_PREFIX + "mode_stat_1");
+      ObjectDelete(0, UI_PREFIX + "mode_stat_2");
       CleanupObjects();
       BuildUI();
       return;
