@@ -608,7 +608,7 @@ int TFMinutes(const ENUM_TIMEFRAMES tf)
    return 60;
 }
 
-int ChanceFromWaveLength(const int sorted_lengths[], const int n, const int wave_len_points)
+int ChanceFromWaveLength(const int &sorted_lengths[], const int n, const int wave_len_points)
 {
    for(int i = 0; i < n; i++)
    {
