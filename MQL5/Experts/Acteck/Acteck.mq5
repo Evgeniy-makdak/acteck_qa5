@@ -591,6 +591,93 @@ int CalcProbability(const string sy, double s, double e)
    return CalcProbabilityDetailed(sy, s, e, n, d, r);
 }
 
+int TFMinutes(const ENUM_TIMEFRAMES tf)
+{
+   switch(tf)
+   {
+      case PERIOD_M1:  return 1;
+      case PERIOD_M5:  return 5;
+      case PERIOD_M15: return 15;
+      case PERIOD_M30: return 30;
+      case PERIOD_H1:  return 60;
+      case PERIOD_H4:  return 240;
+      case PERIOD_D1:  return 1440;
+      case PERIOD_W1:  return 10080;
+      case PERIOD_MN1: return 43200;
+   }
+   return 60;
+}
+
+int ChanceFromWaveLength(const int sorted_lengths[], const int n, const int wave_len_points)
+{
+   for(int i = 0; i < n; i++)
+   {
+      if(sorted_lengths[i] <= wave_len_points)
+         return GetChance(n - i, n);
+   }
+   return 0;
+}
+
+bool EstimateReversalTarget(const string sy, const ENUM_TIMEFRAMES tf, const int filter_points, const int curr_prob,
+                           const double cur_price, const int curr_direction,
+                           double &target_price, double &avg_next_pips10, double &avg_next_bars, int &samples)
+{
+   samples = 0;
+   avg_next_pips10 = 0.0;
+   avg_next_bars = 0.0;
+   target_price = 0.0;
+
+   SearchTrends(sy, tf, EffectiveEndDate(), filter_points, false);
+   int n = g_cnt;
+   if(n < 4)
+      return false;
+
+   int lens[];
+   ArrayResize(lens, n);
+   for(int i = 0; i < n; i++)
+      lens[i] = report[i].pips;
+   ArraySort(lens);
+   ArrayReverse(lens);
+
+   const int band = 10; // +/-10% probability neighborhood
+   double sum_next_points = 0.0;
+   double sum_next_mins = 0.0;
+   for(int i = 0; i < n - 1; i++)
+   {
+      int p_i = ChanceFromWaveLength(lens, n, report[i].pips);
+      if(MathAbs(p_i - curr_prob) > band)
+         continue;
+
+      int next_points = report[i + 1].pips;
+      int next_mins = (int)StringToInteger(report[i + 1].mins);
+      if(next_points <= 0 || next_mins <= 0)
+         continue;
+
+      sum_next_points += (double)next_points;
+      sum_next_mins += (double)next_mins;
+      samples++;
+   }
+
+   if(samples <= 0)
+      return false;
+
+   double avg_next_points = sum_next_points / (double)samples;
+   double pt = PointValue(sy);
+   if(pt <= 0.0)
+      return false;
+
+   // Reversal target: project opposite move from current price.
+   if(curr_direction > 0)
+      target_price = cur_price - avg_next_points * pt;
+   else
+      target_price = cur_price + avg_next_points * pt;
+
+   avg_next_pips10 = avg_next_points / 10.0;
+   int tf_mins = TFMinutes(tf);
+   avg_next_bars = (tf_mins > 0 ? (sum_next_mins / (double)samples) / (double)tf_mins : 0.0);
+   return true;
+}
+
 void DrawHorizontal(const string name, const double price, const color clr, const string text)
 {
    ObjectDelete(0, name);
@@ -641,8 +728,18 @@ void DrawTrendsAndProbability(const string sy, int pips)
       int n = 0, rank = -1;
       double dist_pts = 0.0;
       int curr_prob = CalcProbabilityDetailed(sy, st_tr, cur_tr, n, dist_pts, rank);
+      int curr_dir = (st_tr < end_tr ? 1 : -1);
+      double dyn_target_price = 0.0;
+      double dyn_target_pips10 = 0.0;
+      double dyn_target_bars = 0.0;
+      int dyn_samples = 0;
+      bool has_dyn_target = EstimateReversalTarget(sy, g_current_tf, pips, curr_prob, cur_tr, curr_dir,
+                                                   dyn_target_price, dyn_target_pips10, dyn_target_bars, dyn_samples);
       DrawHorizontal(UI_PREFIX + "price_now", cur_tr, clrLime, "Current " + IntegerToString(curr_prob) + "%");
-      DrawHorizontal(UI_PREFIX + "price_tp", tp, clrLime, "Target");
+      if(has_dyn_target)
+         DrawHorizontal(UI_PREFIX + "price_tp", dyn_target_price, clrLime, "Target dyn " + DoubleToString(dyn_target_pips10, 0) + "p");
+      else
+         DrawHorizontal(UI_PREFIX + "price_tp", tp, clrLime, "Target static");
       if(g_show_debug_details)
       {
          int dbg_x = UI_X + 188;
@@ -651,6 +748,10 @@ void DrawTrendsAndProbability(const string sy, int pips)
             dbg_w = 120;
          string dbg_text = "Pcur=" + IntegerToString(curr_prob) + "%, Dist=" + DoubleToString(dist_pts, 0) +
                            "pt, N=" + IntegerToString(n) + ", idx=" + IntegerToString(rank);
+         if(has_dyn_target)
+            dbg_text += ", Tdyn=" + DoubleToString(dyn_target_pips10, 0) + "p (" + DoubleToString(dyn_target_bars, 1) + " bars), Ns=" + IntegerToString(dyn_samples);
+         else
+            dbg_text += ", Tdyn=NA";
          SetLabel(UI_PREFIX + "prob_details", dbg_x, g_ui_debug_y,
                   FitTextByPixels(dbg_text, dbg_w, 7),
                   C'80,80,80');
