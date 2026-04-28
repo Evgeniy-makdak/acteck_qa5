@@ -1463,6 +1463,8 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    g_current_symbol = g_view_symbols[r];
    g_active_visual_row = r;
    g_active_visual_col = c;
+   // Repaint header highlight immediately after changing active column.
+   BuildUI();
    SetLabel(UI_PREFIX + "active", UI_X + 10, g_ui_panel_top + 50, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
    ChartSetSymbolPeriod(ChartID(), g_current_symbol, g_current_tf);
 }
