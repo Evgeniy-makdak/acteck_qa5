@@ -1048,16 +1048,16 @@ void BuildUI()
    }
 }
 
-void SetCell(const int row, const int col, const string text, const int trend, const bool blocked = false)
+void SetCell(const int row, const int col, const string text, const int trend, const bool blocked = false, const bool ready_signal = false)
 {
    string btn = UI_PREFIX + "btn_" + IntegerToString(row) + "_" + IntegerToString(col);
    color bg = C'250,250,250', fg = C'0,8,127';
-   if(trend > 0) { bg = C'61,122,224'; fg = clrWhite; }
-   if(trend < 0) { bg = C'220,80,80';  fg = clrWhite; }
+   if(ready_signal && trend > 0) { bg = C'61,122,224';  fg = clrWhite; }   // buy-ready
+   if(ready_signal && trend < 0) { bg = C'242,153,74';  fg = clrWhite; }   // sell-ready (not red)
    if(blocked)   { bg = C'185,45,45';  fg = clrWhite; }
    if(row == g_active_visual_row && col == g_active_visual_col)
    {
-      if(trend == 0 && !blocked)
+      if(trend == 0 && !blocked && !ready_signal)
          bg = C'220,240,220';
       if(!blocked)
          fg = C'0,90,0';
@@ -1245,7 +1245,8 @@ void UpdateTable()
          if(perc >= 60)
             clr = (is_buy ? 1 : -1);
          bool blocked = (g_view_mode == MODE_PROBABILITY && IsProbabilitySignalBlocked(filter, max_corr_trend, max_corr, curr_dev_val));
-         SetCell(r, c, FormatCellValue(perc, max_corr, curr_dev), clr, blocked);
+         bool ready_signal = (g_view_mode == MODE_PROBABILITY && perc >= 60 && !blocked);
+         SetCell(r, c, FormatCellValue(perc, max_corr_trend, curr_dev), clr, blocked, ready_signal);
          idx++;
       }
    }
