@@ -264,6 +264,8 @@ int DigitsValue(const string sym)
 
 string TFToString(ENUM_TIMEFRAMES tf)
 {
+   if(tf == PERIOD_CURRENT)
+      tf = (ENUM_TIMEFRAMES)_Period;
    switch(tf)
    {
       case PERIOD_M1:  return "M1";
@@ -1033,7 +1035,15 @@ void BuildUI()
       int real_col = g_active_cols[c];
       string txt = IntegerToString(g_levels[real_col]) + " - " + TFToString(g_tfs[real_col]);
       color hc = (c == g_active_visual_col ? C'0,140,0' : C'0,8,127');
-      SetLabel(UI_PREFIX + "h_f_" + IntegerToString(c), UI_X + UI_SYM_W + UI_ATR_W + 26 + c * UI_COL_W, header_y, txt, hc);
+      string header_btn = UI_PREFIX + "col_" + IntegerToString(c);
+      SetButton(header_btn,
+                UI_X + UI_SYM_W + UI_ATR_W + 14 + c * UI_COL_W,
+                header_y - 8,
+                UI_COL_W - 22,
+                34,
+                txt,
+                (c == g_active_visual_col ? C'220,240,220' : clrWhite),
+                hc);
    }
 
    int total_signals = rows * MathMax(1, g_active_count);
@@ -1426,19 +1436,27 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       return;
    }
 
-   string pfx = UI_PREFIX + "btn_";
-   if(StringFind(sparam, pfx) != 0)
+   string col_pfx = UI_PREFIX + "col_";
+   if(StringFind(sparam, col_pfx) != 0)
       return;
-   string rrcc = StringSubstr(sparam, StringLen(pfx));
-   string parts[];
-   int n = StringSplit(rrcc, '_', parts);
-   if(n != 2)
-      return;
-   int r = (int)StringToInteger(parts[0]);
-   int c = (int)StringToInteger(parts[1]);
-   if(r < 0 || r >= ArraySize(g_view_symbols) || c < 0 || c >= g_active_count)
+   int c = (int)StringToInteger(StringSubstr(sparam, StringLen(col_pfx)));
+   if(c < 0 || c >= g_active_count)
       return;
    int real_col = g_active_cols[c];
+
+   // Keep symbol selection deterministic: prefer current chart symbol if available.
+   string cur = ResolveSymbolName(_Symbol);
+   if(cur == "")
+      cur = _Symbol;
+   int r = 0;
+   for(int i = 0; i < ArraySize(g_view_symbols); i++)
+   {
+      if(g_view_symbols[i] == cur)
+      {
+         r = i;
+         break;
+      }
+   }
 
    g_current_filter = g_levels[real_col];
    g_current_tf = g_tfs[real_col];
