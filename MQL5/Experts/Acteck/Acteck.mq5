@@ -1048,26 +1048,85 @@ void BuildUI()
    }
 }
 
-void SetCell(const int row, const int col, const string text, const int trend)
+void SetCell(const int row, const int col, const string text, const int trend, const bool blocked = false)
 {
    string btn = UI_PREFIX + "btn_" + IntegerToString(row) + "_" + IntegerToString(col);
    color bg = C'250,250,250', fg = C'0,8,127';
    if(trend > 0) { bg = C'61,122,224'; fg = clrWhite; }
    if(trend < 0) { bg = C'220,80,80';  fg = clrWhite; }
+   if(blocked)   { bg = C'185,45,45';  fg = clrWhite; }
    if(row == g_active_visual_row && col == g_active_visual_col)
    {
-      if(trend == 0)
+      if(trend == 0 && !blocked)
          bg = C'220,240,220';
-      fg = C'0,90,0';
+      if(!blocked)
+         fg = C'0,90,0';
    }
    int row_y = g_ui_row_start_y + row * UI_ROW_H;
    SetButton(btn, UI_X + UI_SYM_W + UI_ATR_W + 14 + col * UI_COL_W, row_y - 8, UI_COL_W - 22, 42, text, bg, fg);
-   ObjectSetInteger(0, btn, OBJPROP_BORDER_COLOR, (row == g_active_visual_row && col == g_active_visual_col) ? C'0,150,0' : C'120,120,120');
+   if(blocked)
+      ObjectSetInteger(0, btn, OBJPROP_BORDER_COLOR, C'140,20,20');
+   else
+      ObjectSetInteger(0, btn, OBJPROP_BORDER_COLOR, (row == g_active_visual_row && col == g_active_visual_col) ? C'0,150,0' : C'120,120,120');
 }
 
 string FormatCellValue(const int p, const int mx, const string dev)
 {
    return StringFormat("%d%% | %d | %s", p, mx, dev);
+}
+
+int ToDisplayPoints(const double raw_points)
+{
+   return (int)MathRound(raw_points / 10.0);
+}
+
+int CalcMaxTrendCorrection(const string sy, const ENUM_TIMEFRAMES tf, const int start_idx, const int end_idx, const bool is_buy)
+{
+   double pt = PointValue(sy);
+   if(pt <= 0.0 || start_idx < 0 || end_idx < 0 || start_idx <= end_idx)
+      return 0;
+
+   double peak = iHigh(sy, tf, start_idx);
+   double trough = iLow(sy, tf, start_idx);
+   double max_corr_raw = 0.0;
+
+   for(int j = start_idx; j >= end_idx; j--)
+   {
+      double h = iHigh(sy, tf, j);
+      double l = iLow(sy, tf, j);
+      if(is_buy)
+      {
+         if(h > peak)
+            peak = h;
+         double corr = (peak - l) / pt;
+         if(corr > max_corr_raw)
+            max_corr_raw = corr;
+      }
+      else
+      {
+         if(l < trough)
+            trough = l;
+         double corr = (h - trough) / pt;
+         if(corr > max_corr_raw)
+            max_corr_raw = corr;
+      }
+   }
+
+   return ToDisplayPoints(max_corr_raw);
+}
+
+bool IsProbabilitySignalBlocked(const int filter_raw, const int max_corr_trend, const int max_corr_ext, const int curr_dev)
+{
+   if(filter_raw <= 0)
+      return false;
+   double filter_pts = filter_raw / 10.0;
+   int max_corr_trend_limit = (int)MathFloor(filter_pts * 0.80);
+   int max_corr_ext_limit   = (int)MathFloor(filter_pts * 0.60);
+   int curr_dev_limit       = (int)MathFloor(filter_pts * 0.40);
+
+   return (max_corr_trend >= max_corr_trend_limit ||
+           max_corr_ext   >= max_corr_ext_limit ||
+           curr_dev       >= curr_dev_limit);
 }
 
 void CallAlert(const int lvl, const int index)
@@ -1162,26 +1221,31 @@ void UpdateTable()
             idx++;
             continue;
          }
+         int st_ext = BarsShiftSafe(sy, tf, StringToTime(report[g_cnt - 1].start_tr_tm));
          int en_ext = BarsShiftSafe(sy, tf, StringToTime(report[g_cnt - 1].end_tr_tm));
          int max_corr = 0;
+         bool is_buy = (report[g_cnt - 1].trend == "buy");
          if(en_ext >= 0)
          {
             for(int j = en_ext; j >= 0; j--)
             {
                int d = 0;
                double pt = PointValue(sy);
-               if(report[g_cnt - 1].trend == "buy")
+               if(is_buy)
                   d = (int)((iHigh(sy, tf, en_ext) - iLow(sy, tf, j)) / 10.0 / pt);
                else
                   d = (int)((iHigh(sy, tf, j) - iLow(sy, tf, en_ext)) / 10.0 / pt);
                if(d > max_corr) max_corr = d;
             }
          }
-         string curr_dev = DoubleToString(MathAbs(StringToDouble(report[g_cnt - 1].end_tr_pr) - iClose(sy, tf, 0)) / 10.0 / PointValue(sy), 0);
+         int max_corr_trend = CalcMaxTrendCorrection(sy, tf, st_ext, en_ext, is_buy);
+         int curr_dev_val = ToDisplayPoints(MathAbs(StringToDouble(report[g_cnt - 1].end_tr_pr) - iClose(sy, tf, 0)) / PointValue(sy));
+         string curr_dev = IntegerToString(curr_dev_val);
          int clr = 0;
          if(perc >= 60)
-            clr = (report[g_cnt - 1].trend == "buy" ? 1 : -1);
-         SetCell(r, c, FormatCellValue(perc, max_corr, curr_dev), clr);
+            clr = (is_buy ? 1 : -1);
+         bool blocked = (g_view_mode == MODE_PROBABILITY && IsProbabilitySignalBlocked(filter, max_corr_trend, max_corr, curr_dev_val));
+         SetCell(r, c, FormatCellValue(perc, max_corr, curr_dev), clr, blocked);
          idx++;
       }
    }
