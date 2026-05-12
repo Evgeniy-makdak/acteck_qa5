@@ -172,7 +172,11 @@ def Caption(text):
     return Paragraph(text, S_CAPTION)
 
 def add_image(img_name, width=14*cm, caption_text=None):
-    """Add an image from paper_images folder with optional caption."""
+    """Add an image from optional ``paper_images/`` folder (for PDF regeneration).
+
+    Rasters are already embedded in the distributed ``Acteck_Method_Scientific_Paper.pdf``;
+    if ``paper_images`` is absent, a short placeholder is inserted instead of the figure.
+    """
     img_path = os.path.join(os.path.dirname(__file__), "paper_images", img_name)
     elems = []
     if os.path.exists(img_path):
