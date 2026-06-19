@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
-//|                                                   Acteck 1.22 |
+//|                                                   Acteck 1.23 |
 //|                          Copyright 2026, Evgeniy Acteck          |
 //|          Индикатор разворотных зон на основе количественного анализа |
 //+------------------------------------------------------------------+
 #property copyright "Evgeniy Acteck"
 #property link      "https://github.com/Evgeniy-makdak/acteck_qa5"
-#property version   "1.22"
+#property version   "1.23"
 #property strict
 
 struct REPORT
@@ -1138,21 +1138,24 @@ void DrawTrendsAndProbability(const string sy, int pips)
       {
          double sum_speed = 0.0;
          int n_speed = 0;
+         double v_max = 0.0;
          for(int i = 0; i < g_cnt; i++)
          {
             int mins_i = (int)StringToInteger(report[i].mins);
             if(mins_i <= 0) continue;
-            sum_speed += (report[i].pips / 10.0) / (double)mins_i;
+            double v_i = (report[i].pips / 10.0) / (double)mins_i;
+            sum_speed += v_i;
             n_speed++;
+            if(v_i > v_max)
+               v_max = v_i;
          }
          double avg_speed = (n_speed > 0 ? sum_speed / n_speed : 0.0);
+         int stat2_x = g_ui_debug_text_x + MathMax(260, g_ui_debug_text_w / 2);
+         SetLabel(UI_PREFIX + "mode_stat_1", g_ui_debug_text_x, g_ui_debug_y, "Vmax=" + DoubleToString(v_max, 3), clrLime);
+         SetLabel(UI_PREFIX + "mode_stat_2", stat2_x, g_ui_debug_y, "Vavg=" + DoubleToString(avg_speed, 3), clrLime);
 
          SearchTrends(sy, g_current_tf, iTime(sy, g_current_tf, 0), pips, false);
          double cur_speed = (g_cnt > 0 ? WaveSpeedValue(report[g_cnt - 1]) : 0.0);
-         int stat2_x = g_ui_debug_text_x + MathMax(260, g_ui_debug_text_w / 2);
-         SetLabel(UI_PREFIX + "mode_stat_1", g_ui_debug_text_x, g_ui_debug_y, "Vcur=" + DoubleToString(cur_speed, 3), clrLime);
-         SetLabel(UI_PREFIX + "mode_stat_2", stat2_x, g_ui_debug_y, "Vavg=" + DoubleToString(avg_speed, 3), clrLime);
-
          if(g_cnt > 0)
             DrawChartTextAtTime(UI_PREFIX + "ext_stat", end_time, end_tr,
                                 "Vcur=" + DoubleToString(cur_speed, 3),
@@ -1344,7 +1347,7 @@ void BuildUI()
       mode_text = "Режим: Скорость";
       mode_bg = clrTomato;
    }
-   SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck 1.22 | Author: Evgeniy Acteck", C'0,8,127');
+   SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck 1.23 | Author: Evgeniy Acteck", C'0,8,127');
    SetButton(UI_PREFIX + "mode", mode_x, title_y - 2, mode_w, 36, mode_text, mode_bg, clrWhite);
    SetLabel(UI_PREFIX + "active", UI_X + 10, active_y, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
    ObjectDelete(0, UI_PREFIX + "active_hint");
