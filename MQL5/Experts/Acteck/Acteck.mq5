@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
-//|                                                   Acteck 1.21 |
+//|                                                   Acteck 1.22 |
 //|                          Copyright 2026, Evgeniy Acteck          |
 //|          Индикатор разворотных зон на основе количественного анализа |
 //+------------------------------------------------------------------+
 #property copyright "Evgeniy Acteck"
 #property link      "https://github.com/Evgeniy-makdak/acteck_qa5"
-#property version   "1.21"
+#property version   "1.22"
 #property strict
 
 struct REPORT
@@ -764,6 +764,22 @@ double WaveSpeedValue(const REPORT &seg)
    return (seg.pips / 10.0) / (double)mins;
 }
 
+double MaxHistoricalWaveSpeed(const string sy, const ENUM_TIMEFRAMES tf, const int filter)
+{
+   SearchTrends(sy, tf, EffectiveEndDate(), filter, false);
+   double v_max = 0.0;
+   for(int i = 0; i < g_cnt; i++)
+   {
+      int mins_i = (int)StringToInteger(report[i].mins);
+      if(mins_i <= 0)
+         continue;
+      double v = (report[i].pips / 10.0) / (double)mins_i;
+      if(v > v_max)
+         v_max = v;
+   }
+   return v_max;
+}
+
 int CalcMaxCorrectionDurationMins(const string sy, const ENUM_TIMEFRAMES tf, const int start_idx, const bool is_buy)
 {
    if(start_idx < 1)
@@ -1272,8 +1288,16 @@ void BuildUI()
       int cols = MathMax(1, g_active_count);
       int available = (int)chart_w - UI_X - 24 - UI_SYM_W - UI_ATR_W - 40;
       int dynamic_w = (cols > 0 ? available / cols : 220);
-      if(dynamic_w < 170) dynamic_w = 170;
-      if(dynamic_w > 260) dynamic_w = 260;
+      if(g_view_mode == MODE_SPEED)
+      {
+         if(dynamic_w < 280) dynamic_w = 280;
+         if(dynamic_w > 340) dynamic_w = 340;
+      }
+      else
+      {
+         if(dynamic_w < 170) dynamic_w = 170;
+         if(dynamic_w > 260) dynamic_w = 260;
+      }
       UI_COL_W = dynamic_w;
    }
    ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0, chart_h);
@@ -1320,7 +1344,7 @@ void BuildUI()
       mode_text = "Режим: Скорость";
       mode_bg = clrTomato;
    }
-   SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck 1.21 | Author: Evgeniy Acteck", C'0,8,127');
+   SetLabel(UI_PREFIX + "title", UI_X, title_y, "Acteck 1.22 | Author: Evgeniy Acteck", C'0,8,127');
    SetButton(UI_PREFIX + "mode", mode_x, title_y - 2, mode_w, 36, mode_text, mode_bg, clrWhite);
    SetLabel(UI_PREFIX + "active", UI_X + 10, active_y, "Активный график: " + IntegerToString(g_current_filter) + " - " + TFToString(g_current_tf), C'0,120,0');
    ObjectDelete(0, UI_PREFIX + "active_hint");
@@ -1335,7 +1359,7 @@ void BuildUI()
    if(g_view_mode == MODE_DURATION)
       hint_text = "Формат ячейки: Длительность % от средней | Макс коррекция T | Lcur";
    else if(g_view_mode == MODE_SPEED)
-      hint_text = "Формат ячейки: Скорость % от средней | Макс коррекция V | Vcur";
+      hint_text = "Формат ячейки: Скорость % от средней | Макс коррекция V | Vmax";
    SetLabel(UI_PREFIX + "hint", UI_X + 10, row_start_y + rows * UI_ROW_H + 44, hint_text, C'80,80,80');
 
    for(int c = 0; c < g_active_count; c++)
@@ -1431,6 +1455,10 @@ void SetCell(const int row, const int col, const string text, const int trend,
    SetButton(btn + "_p1", x + gap,               part_y, part_w - 2, part_h, v1, p1bg, p1fg);
    SetButton(btn + "_p2", x + gap + part_w,      part_y, part_w - 2, part_h, v2, p2bg, p2fg);
    SetButton(btn + "_p3", x + gap + part_w * 2,  part_y, part_w - 2, part_h, v3, p3bg, p3fg);
+   int cell_font = (g_view_mode == MODE_SPEED ? MathMax(8, FontSize - 1) : FontSize);
+   ObjectSetInteger(0, btn + "_p1", OBJPROP_FONTSIZE, cell_font);
+   ObjectSetInteger(0, btn + "_p2", OBJPROP_FONTSIZE, cell_font);
+   ObjectSetInteger(0, btn + "_p3", OBJPROP_FONTSIZE, cell_font);
    ObjectSetInteger(0, btn + "_p1", OBJPROP_BORDER_COLOR, C'170,170,170');
    ObjectSetInteger(0, btn + "_p2", OBJPROP_BORDER_COLOR, C'170,170,170');
    ObjectSetInteger(0, btn + "_p3", OBJPROP_BORDER_COLOR, C'170,170,170');
@@ -1741,8 +1769,8 @@ void UpdateTable()
          else
          {
             double v_corr_max = CalcMaxCorrectionSpeed(sy, tf, st_ext, is_buy);
-            double v_cur = WaveSpeedValue(report[g_cnt - 1]);
-            string cell_text = StringFormat("%d%% | %s | %s", perc, DoubleToString(v_corr_max, 3), DoubleToString(v_cur, 3));
+            double v_max = MaxHistoricalWaveSpeed(sy, tf, filter);
+            string cell_text = StringFormat("%d%% | %s | %s", perc, DoubleToString(v_corr_max, 3), DoubleToString(v_max, 3));
             SetCell(r, c, cell_text, clr);
          }
          idx++;
